@@ -17,6 +17,10 @@ type ProductRow = {
   sports?: { name: string | null; slug: string | null } | null;
 };
 
+type ParallelImageRow = {
+  storage_path: string;
+};
+
 type ParallelRow = {
   id: string;
   name: string;
@@ -29,6 +33,8 @@ type ParallelRow = {
   is_retail_exclusive: boolean | null;
   notes: string | null;
   sort_order: number | null;
+  // IMPORTANT: actually load this relation
+  parallel_images: ParallelImageRow[] | null;
 };
 
 // Helper: clean up the display name
@@ -157,7 +163,7 @@ export default async function SetPage(props: SetPageProps) {
     );
   }
 
-  // Load all parallels for this product
+  // Load all parallels for this product, INCLUDING images
   const { data: parallels, error: parallelsError } = (await supabase
     .from("parallels")
     .select(
@@ -172,7 +178,8 @@ export default async function SetPage(props: SetPageProps) {
       is_hobby_exclusive,
       is_retail_exclusive,
       notes,
-      sort_order
+      sort_order,
+      parallel_images ( storage_path )
     `.trim()
     )
     .eq("product_id", product.id)
@@ -181,7 +188,7 @@ export default async function SetPage(props: SetPageProps) {
     error: any;
   };
 
-  const safeParallels = parallels ?? [];
+  const safeParallels: ParallelRow[] = parallels ?? [];
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -269,9 +276,33 @@ export default async function SetPage(props: SetPageProps) {
                   key={parallel.id}
                   className="flex gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3"
                 >
-                  {/* Image placeholder */}
+                  {/* Image block */}
                   <div className="relative w-20 flex-shrink-0 md:w-24">
-                    <div className="aspect-[2.5/3.5] w-full rounded-md bg-black/90 ring-1 ring-slate-800" />
+                    {parallel.parallel_images?.[0] ? (
+                      (() => {
+                        const img = parallel.parallel_images[0];
+                        const { data, error } = supabase.storage
+                          .from("parallel-images")
+                          .getPublicUrl(img.storage_path);
+
+                        if (error) {
+                          console.warn("Image URL error", { error, img });
+                          return (
+                            <div className="aspect-[2.5/3.5] w-full rounded-md bg-black/90 ring-1 ring-slate-800" />
+                          );
+                        }
+
+                        return (
+                          <img
+                            src={data.publicUrl}
+                            alt={parallel.name}
+                            className="aspect-[2.5/3.5] w-full rounded-md object-cover ring-1 ring-emerald-400/40"
+                          />
+                        );
+                      })()
+                    ) : (
+                      <div className="aspect-[2.5/3.5] w-full rounded-md bg-black/90 ring-1 ring-slate-800" />
+                    )}
                   </div>
 
                   {/* Info column */}
