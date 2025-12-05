@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { FlippableImage } from "@/components/FlippableImage";
 
 // Props type for Next 16 App Router (params is a Promise)
 type SetPageProps = {
@@ -278,31 +279,51 @@ export default async function SetPage(props: SetPageProps) {
                 >
                   {/* Image block */}
                   <div className="relative w-20 flex-shrink-0 md:w-24">
-                    {parallel.parallel_images?.[0] ? (
-                      (() => {
-                        const img = parallel.parallel_images[0];
-                        const { data, error } = supabase.storage
-                          .from("parallel-images")
-                          .getPublicUrl(img.storage_path);
-
-                        if (error) {
-                          console.warn("Image URL error", { error, img });
-                          return (
-                            <div className="aspect-[2.5/3.5] w-full rounded-md bg-black/90 ring-1 ring-slate-800" />
-                          );
-                        }
-
+                    {(() => {
+                      // No images at all – show the old placeholder
+                      if (
+                        !parallel.parallel_images ||
+                        parallel.parallel_images.length === 0
+                      ) {
                         return (
-                          <img
-                            src={data.publicUrl}
-                            alt={parallel.name}
-                            className="aspect-[2.5/3.5] w-full rounded-md object-cover ring-1 ring-emerald-400/40"
-                          />
+                          <div className="aspect-[2.5/3.5] w-full rounded-md bg-black/90 ring-1 ring-slate-800" />
                         );
-                      })()
-                    ) : (
-                      <div className="aspect-[2.5/3.5] w-full rounded-md bg-black/90 ring-1 ring-slate-800" />
-                    )}
+                      }
+
+                      // Try to detect front/back by filename; fall back to first/second
+                      const paths = parallel.parallel_images.map(
+                        (img) => img.storage_path
+                      );
+
+                      const frontPath =
+                        paths.find((p) => p.toLowerCase().includes("front")) ??
+                        paths[0];
+
+                      const backPath =
+                        paths.find((p) => p.toLowerCase().includes("back")) ??
+                        (paths.length > 1 ? paths[1] : undefined);
+
+                      const { data: frontData } = supabase.storage
+                        .from("parallel-images")
+                        .getPublicUrl(frontPath);
+
+                      const { data: backData } = backPath
+                        ? supabase.storage
+                            .from("parallel-images")
+                            .getPublicUrl(backPath)
+                        : { data: { publicUrl: "" } };
+
+                      const frontUrl = frontData.publicUrl;
+                      const backUrl = backData.publicUrl || undefined;
+
+                      return (
+                        <FlippableImage
+                          frontUrl={frontUrl}
+                          backUrl={backUrl}
+                          alt={parallel.name}
+                        />
+                      );
+                    })()}
                   </div>
 
                   {/* Info column */}

@@ -1,6 +1,6 @@
 // src/app/page.tsx
 import { supabase } from "@/lib/supabaseClient";
-import ProductsExplorer from "@/components/products-explorer";
+import HomeTabs from "@/components/home-tabs";
 
 type ProductRow = {
   id: string;
@@ -10,6 +10,17 @@ type ProductRow = {
   is_active: boolean;
   manufacturers?: { name: string | null; slug: string | null } | null;
   sports?: { name: string | null; slug: string | null } | null;
+};
+
+export type SafeProduct = {
+  id: string;
+  name: string;
+  slug: string;
+  year: number;
+  manufacturerName: string;
+  manufacturerSlug: string;
+  sportName: string;
+  sportSlug: string;
 };
 
 export default async function Home() {
@@ -29,7 +40,7 @@ export default async function Home() {
     .eq("is_active", true)
     .order("year", { ascending: false });
 
-  const safeProducts =
+  const safeProducts: SafeProduct[] =
     (data as ProductRow[] | null)?.map((p) => ({
       id: p.id,
       name: p.full_display_name,
@@ -93,7 +104,7 @@ export default async function Home() {
           </div>
         )}
 
-        <ProductsExplorer products={safeProducts} />
+        <HomeTabs products={safeProducts} />
       </section>
     </main>
   );
