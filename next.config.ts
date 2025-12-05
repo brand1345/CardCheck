@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  images: {
+    domains: ["siffqleeymcnchoivjqu.supabase.co"], // 👈 add this
+  },
   reactCompiler: true,
 };
 

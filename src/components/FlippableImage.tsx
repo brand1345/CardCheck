@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import ZoomableImage from "@/components/zoomable-image";
 
 type FlippableImageProps = {
   frontUrl?: string;
@@ -38,15 +39,7 @@ export function FlippableImage({
             className="absolute inset-0"
             style={{ backfaceVisibility: "hidden" }}
           >
-            {frontUrl ? (
-              <img
-                src={frontUrl}
-                alt={alt}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="h-full w-full bg-black/90" />
-            )}
+            <ZoomableImage src={frontUrl} alt={alt} />
           </div>
 
           {/* Back */}
@@ -58,11 +51,7 @@ export function FlippableImage({
             }}
           >
             {backUrl ? (
-              <img
-                src={backUrl}
-                alt={`${alt} (back)`}
-                className="h-full w-full object-cover"
-              />
+              <ZoomableImage src={backUrl} alt={alt} />
             ) : (
               <div className="h-full w-full bg-black/90" />
             )}

@@ -144,14 +144,20 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
         .from(bucket)
         .upload(frontPath, frontFile, { upsert: true });
 
-      if (frontErr) throw new Error("Failed to upload front image.");
+      if (frontErr) {
+        console.error("Front upload error:", frontErr);
+        throw new Error(frontErr.message ?? "Failed to upload front image.");
+      }
 
       // upload back
       const { error: backErr } = await supabase.storage
         .from(bucket)
         .upload(backPath, backFile, { upsert: true });
 
-      if (backErr) throw new Error("Failed to upload back image.");
+      if (backErr) {
+        console.error("Back upload error:", backErr);
+        throw new Error(backErr.message ?? "Failed to upload back image.");
+      }
 
       // insert records
       const { error: insertErr } = await supabase
