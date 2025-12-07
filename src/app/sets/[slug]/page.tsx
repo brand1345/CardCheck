@@ -28,60 +28,48 @@ type ParallelRow = {
   slug: string;
   serial_min: number | null;
   serial_max: number | null;
-  is_case_hit: boolean | null;
   rarity_tier: string | null;
+
   is_hobby_exclusive: boolean | null;
   is_retail_exclusive: boolean | null;
+  is_fotl_exclusive: boolean | null;
+  is_numbered: boolean | null;
+  is_auto: boolean | null;
+  is_sp: boolean | null;
+  is_ssp: boolean | null;
+
   notes: string | null;
   sort_order: number | null;
-  // IMPORTANT: actually load this relation
   parallel_images: ParallelImageRow[] | null;
 };
 
-// Helper: clean up the display name
-// - removes trailing " - /99" style serial suffixes
-// - removes "FOTL" from the title text
+// Clean up display name (remove trailing " - /99" and "FOTL" text)
 function displayParallelName(name: string) {
-  // remove " - /99" or similar
   let cleaned = name.replace(/\s*-\s*\/\d+$/i, "");
-
-  // remove the word "FOTL" anywhere in the name
   cleaned = cleaned.replace(/\bFOTL\b/gi, "");
-
-  // collapse extra spaces / stray dashes and trim
   cleaned = cleaned.replace(/\s+/g, " ").replace(/[-–]\s*$/, "");
-
   return cleaned.trim();
 }
 
-// Helper: derive checklist flags from the row
-// (no more "case hit" entry)
-function buildChecklist(parallel: {
-  name: string;
-  serial_max: number | null;
-  is_hobby_exclusive: boolean | null;
-  is_retail_exclusive: boolean | null;
-  rarity_tier: string | null;
-}) {
-  const isSerial = parallel.serial_max != null;
-  const isFOTL = parallel.name.toLowerCase().includes("fotl");
-
-  const rarity = (parallel.rarity_tier ?? "").toLowerCase();
-  const isSP = rarity === "sp";
-  const isSSP = rarity === "ssp";
+// Build checklist purely from the 7 badge booleans (plus serial_max for label text)
+function buildChecklist(parallel: ParallelRow) {
+  const isNumbered = !!parallel.is_numbered;
+  const serialLabel = isNumbered
+    ? parallel.serial_max != null
+      ? `Serial numbered /${parallel.serial_max}`
+      : "Serial numbered"
+    : "Not numbered";
 
   return [
     {
       key: "serial",
-      label: isSerial
-        ? `Serial numbered /${parallel.serial_max}`
-        : "Not numbered",
-      active: isSerial,
+      label: serialLabel,
+      active: isNumbered,
     },
     {
       key: "fotl",
       label: "FOTL exclusive",
-      active: isFOTL,
+      active: !!parallel.is_fotl_exclusive,
     },
     {
       key: "hobby",
@@ -94,14 +82,19 @@ function buildChecklist(parallel: {
       active: !!parallel.is_retail_exclusive,
     },
     {
+      key: "auto",
+      label: "Autograph",
+      active: !!parallel.is_auto,
+    },
+    {
       key: "sp",
       label: "SP (short print)",
-      active: isSP,
+      active: !!parallel.is_sp,
     },
     {
       key: "ssp",
       label: "SSP (super short print)",
-      active: isSSP,
+      active: !!parallel.is_ssp,
     },
   ];
 }
@@ -125,7 +118,6 @@ export default async function SetPage(props: SetPageProps) {
     .eq("slug", slug)
     .maybeSingle<ProductRow>();
 
-  // If we don't find the set, show a simple not-found state
   if (productError || !product) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -164,7 +156,7 @@ export default async function SetPage(props: SetPageProps) {
     );
   }
 
-  // Load all parallels for this product, INCLUDING images
+  // Load all parallels for this product, INCLUDING images + badge booleans
   const { data: parallels, error: parallelsError } = (await supabase
     .from("parallels")
     .select(
@@ -174,10 +166,14 @@ export default async function SetPage(props: SetPageProps) {
       slug,
       serial_min,
       serial_max,
-      is_case_hit,
       rarity_tier,
       is_hobby_exclusive,
       is_retail_exclusive,
+      is_fotl_exclusive,
+      is_numbered,
+      is_auto,
+      is_sp,
+      is_ssp,
       notes,
       sort_order,
       parallel_images ( storage_path )
@@ -280,7 +276,6 @@ export default async function SetPage(props: SetPageProps) {
                   {/* Image block */}
                   <div className="relative w-20 flex-shrink-0 md:w-24">
                     {(() => {
-                      // No images at all – show the old placeholder
                       if (
                         !parallel.parallel_images ||
                         parallel.parallel_images.length === 0
@@ -290,7 +285,6 @@ export default async function SetPage(props: SetPageProps) {
                         );
                       }
 
-                      // Try to detect front/back by filename; fall back to first/second
                       const paths = parallel.parallel_images.map(
                         (img) => img.storage_path
                       );
@@ -328,12 +322,11 @@ export default async function SetPage(props: SetPageProps) {
 
                   {/* Info column */}
                   <div className="flex flex-1 flex-col gap-2">
-                    {/* Name (without /99 etc) */}
                     <h3 className="text-sm font-semibold text-slate-100 leading-snug">
                       {displayParallelName(parallel.name)}
                     </h3>
 
-                    {/* Checklist */}
+                    {/* Checklist driven only by DB badge booleans */}
                     {(() => {
                       const checklist = buildChecklist(parallel);
 
@@ -362,7 +355,6 @@ export default async function SetPage(props: SetPageProps) {
                       );
                     })()}
 
-                    {/* Optional notes */}
                     {parallel.notes && (
                       <p className="text-[11px] text-slate-400 leading-snug">
                         {parallel.notes}

@@ -14,31 +14,31 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
+
 import type { SafeProduct } from "@/app/page";
+import type { Database } from "@/lib/database.types";
 
-type Parallel = {
-  id: string;
-  parallel_name?: string | null;
-  name?: string | null;
-};
+// Row type from Supabase
+export type Parallel = Database["public"]["Tables"]["parallels"]["Row"];
 
+// Only these 7 booleans drive badges
 type BadgeKeys =
-  | "is_rookie"
-  | "is_case_hit"
-  | "is_ssp"
-  | "is_auto"
-  | "is_mem"
+  | "is_hobby_exclusive"
+  | "is_retail_exclusive"
+  | "is_fotl_exclusive"
   | "is_numbered"
-  | "is_fotl_exclusive"; // adjust if your columns differ
+  | "is_auto"
+  | "is_sp"
+  | "is_ssp";
 
 const BADGE_DEFS: { key: BadgeKeys; label: string }[] = [
-  { key: "is_rookie", label: "Rookie" },
-  { key: "is_case_hit", label: "Case Hit" },
-  { key: "is_ssp", label: "SSP" },
-  { key: "is_auto", label: "Auto" },
-  { key: "is_mem", label: "Memorabilia" },
-  { key: "is_numbered", label: "Serial Numbered" },
+  { key: "is_hobby_exclusive", label: "Hobby Exclusive" },
+  { key: "is_retail_exclusive", label: "Retail Exclusive" },
   { key: "is_fotl_exclusive", label: "FOTL Exclusive" },
+  { key: "is_numbered", label: "Serial Numbered" },
+  { key: "is_auto", label: "Auto" },
+  { key: "is_sp", label: "SP" },
+  { key: "is_ssp", label: "SSP" },
 ];
 
 type AdminUploadTabProps = {
@@ -52,7 +52,7 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
     null
   );
 
-  // parallels
+  // parallels for the selected set
   const [parallels, setParallels] = useState<Parallel[]>([]);
   const [selectedParallelId, setSelectedParallelId] = useState<string | null>(
     null
@@ -62,15 +62,15 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [backFile, setBackFile] = useState<File | null>(null);
 
-  // badges
+  // badge toggle state
   const [badges, setBadges] = useState<Record<BadgeKeys, boolean>>({
-    is_rookie: false,
-    is_case_hit: false,
-    is_ssp: false,
-    is_auto: false,
-    is_mem: false,
-    is_numbered: false,
+    is_hobby_exclusive: false,
+    is_retail_exclusive: false,
     is_fotl_exclusive: false,
+    is_numbered: false,
+    is_auto: false,
+    is_sp: false,
+    is_ssp: false,
   });
 
   // status
@@ -78,7 +78,7 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // 🔁 Load parallels whenever set (product) changes
+  // Load parallels whenever the selected product changes
   useEffect(() => {
     if (!selectedProductId) {
       setParallels([]);
@@ -88,14 +88,12 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
 
     const loadParallels = async () => {
       setError(null);
-      console.log("Selected product:", selectedProductId);
 
       const { data, error } = await supabase
         .from("parallels")
         .select("*")
         .eq("product_id", selectedProductId);
 
-      console.log("Parallels returned:", data, "error:", error);
       if (error) {
         console.error("Error loading parallels:", error);
         setError("Failed to load parallels for this set.");
@@ -129,8 +127,9 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
     }
 
     setIsSubmitting(true);
+
     try {
-      const bucket = "parallel-images"; // adjust if your bucket is named differently
+      const bucket = "parallel-images"; // must match your Supabase bucket name
       const folder = `parallels/${selectedParallelId}`;
 
       const frontExt = frontFile.name.split(".").pop() ?? "jpg";
@@ -159,7 +158,7 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
         throw new Error(backErr.message ?? "Failed to upload back image.");
       }
 
-      // insert records
+      // insert image records
       const { error: insertErr } = await supabase
         .from("parallel_images")
         .insert([
@@ -173,30 +172,35 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
           },
         ]);
 
-      if (insertErr) throw new Error("Failed to save image records.");
+      if (insertErr) {
+        console.error("Insert error:", insertErr);
+        throw new Error("Failed to save image records.");
+      }
 
-      // update badges
+      // update badges on the parallel row
       const { error: updateErr } = await supabase
         .from("parallels")
         .update({ ...badges })
         .eq("id", selectedParallelId);
 
-      if (updateErr)
+      if (updateErr) {
+        console.error("Badge update error:", updateErr);
         throw new Error("Images uploaded, but failed to update badges.");
+      }
 
-      // ✅ keep year + set; reset only parallel/files/badges
+      // reset parallel/files/badges (keep year + set)
       setMessage("Upload successful and badges updated.");
       setSelectedParallelId(null);
       setFrontFile(null);
       setBackFile(null);
       setBadges({
-        is_rookie: false,
-        is_case_hit: false,
-        is_ssp: false,
-        is_auto: false,
-        is_mem: false,
-        is_numbered: false,
+        is_hobby_exclusive: false,
+        is_retail_exclusive: false,
         is_fotl_exclusive: false,
+        is_numbered: false,
+        is_auto: false,
+        is_sp: false,
+        is_ssp: false,
       });
     } catch (err: any) {
       console.error(err);
@@ -206,7 +210,7 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
     }
   };
 
-  // derived options
+  // derived lists
   const yearOptions = Array.from(
     new Set(products.map((p) => p.year).filter((y): y is number => !!y))
   ).sort((a, b) => b - a);
@@ -246,7 +250,7 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
           </Select>
         </div>
 
-        {/* Set / Product */}
+        {/* Set */}
         <div className="space-y-2">
           <Label>Set</Label>
           <Select
@@ -289,7 +293,7 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
             <SelectContent>
               {parallels.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
-                  {p.parallel_name ?? p.name ?? p.id}
+                  {p.name ?? p.slug ?? p.id}
                 </SelectItem>
               ))}
               {selectedProductId && parallels.length === 0 && (
@@ -302,7 +306,7 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
         </div>
 
         {/* Files */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="front">Front image</Label>
             <Input
