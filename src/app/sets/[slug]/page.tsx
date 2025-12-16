@@ -4,9 +4,10 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { FlippableImage } from "@/components/FlippableImage";
 
-// Props type for Next 16 App Router (params is a Promise)
+// Props type for Next 16 App Router (params/searchParams are Promises)
 type SetPageProps = {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ view?: string }>;
 };
 
 type ProductRow = {
@@ -32,7 +33,7 @@ type ParallelRow = {
 
   is_hobby_exclusive: boolean | null;
   is_retail_exclusive: boolean | null;
-  is_fotl_exclusive: boolean | null;
+  is_fotl_hit: boolean | null;
   is_numbered: boolean | null;
   is_auto: boolean | null;
   is_sp: boolean | null;
@@ -69,7 +70,7 @@ function buildChecklist(parallel: ParallelRow) {
     {
       key: "fotl",
       label: "FOTL exclusive",
-      active: !!parallel.is_fotl_exclusive,
+      active: !!parallel.is_fotl_hit,
     },
     {
       key: "hobby",
@@ -101,6 +102,13 @@ function buildChecklist(parallel: ParallelRow) {
 
 export default async function SetPage(props: SetPageProps) {
   const { slug } = await props.params;
+  const { view } = await props.searchParams;
+
+  type ViewKey = "base-non-serial" | "base-serial" | "autos";
+  const activeView: ViewKey =
+    view === "base-serial" || view === "autos"
+      ? (view as ViewKey)
+      : "base-non-serial";
 
   // Load the product (set) by slug
   const { data: product, error: productError } = await supabase
@@ -169,7 +177,7 @@ export default async function SetPage(props: SetPageProps) {
       rarity_tier,
       is_hobby_exclusive,
       is_retail_exclusive,
-      is_fotl_exclusive,
+      is_fotl_hit,
       is_numbered,
       is_auto,
       is_sp,
@@ -186,6 +194,36 @@ export default async function SetPage(props: SetPageProps) {
   };
 
   const safeParallels: ParallelRow[] = parallels ?? [];
+
+  // Split into base vs autos, then serial vs non-serial for base
+  const baseParallels = safeParallels.filter((p) => !p.is_auto);
+  const autoParallels = safeParallels.filter((p) => !!p.is_auto);
+
+  const baseNonSerial = baseParallels.filter((p) => !p.is_numbered);
+  const baseSerial = baseParallels.filter((p) => p.is_numbered === true);
+
+  let activeList: ParallelRow[] = [];
+  let emptyMessage = "";
+
+  switch (activeView) {
+    case "base-serial":
+      activeList = baseSerial;
+      emptyMessage =
+        "No serial base parallels have been added for this set yet.";
+      break;
+    case "autos":
+      activeList = autoParallels;
+      emptyMessage = "No autograph parallels have been added for this set yet.";
+      break;
+    case "base-non-serial":
+    default:
+      activeList = baseNonSerial;
+      emptyMessage =
+        "No non-serial base parallels have been added for this set yet.";
+      break;
+  }
+
+  const basePath = `/sets/${product.slug}`;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -248,12 +286,49 @@ export default async function SetPage(props: SetPageProps) {
 
         {/* Parallels section */}
         <div className="mt-4 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold tracking-tight">Parallels</h2>
-            <span className="text-xs text-slate-400">
-              {safeParallels.length} parallel
-              {safeParallels.length === 1 ? "" : "s"}
-            </span>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold tracking-tight">
+                Parallels
+              </h2>
+              <span className="text-xs text-slate-400">
+                {safeParallels.length} total
+              </span>
+            </div>
+
+            {/* Tabs: Base Non-Serial / Base Serial / Autos */}
+            <div className="inline-flex items-center rounded-full bg-slate-900 p-1 text-xs">
+              <Link
+                href={basePath}
+                className={`rounded-full px-3 py-1 ${
+                  activeView === "base-non-serial"
+                    ? "bg-slate-800 text-slate-50"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Base – Non-Serial ({baseNonSerial.length})
+              </Link>
+              <Link
+                href={`${basePath}?view=base-serial`}
+                className={`rounded-full px-3 py-1 ${
+                  activeView === "base-serial"
+                    ? "bg-slate-800 text-slate-50"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Base – Serial ({baseSerial.length})
+              </Link>
+              <Link
+                href={`${basePath}?view=autos`}
+                className={`rounded-full px-3 py-1 ${
+                  activeView === "autos"
+                    ? "bg-slate-800 text-slate-50"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                Autos ({autoParallels.length})
+              </Link>
+            </div>
           </div>
 
           {parallelsError && (
@@ -262,13 +337,11 @@ export default async function SetPage(props: SetPageProps) {
             </div>
           )}
 
-          {safeParallels.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              No parallels have been added for this set yet.
-            </p>
+          {activeList.length === 0 ? (
+            <p className="text-sm text-slate-400">{emptyMessage}</p>
           ) : (
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {safeParallels.map((parallel) => (
+              {activeList.map((parallel) => (
                 <article
                   key={parallel.id}
                   className="flex gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 
 import { Button } from "@/components/ui/button";
@@ -21,11 +21,11 @@ import type { Database } from "@/lib/database.types";
 // Row type from Supabase
 export type Parallel = Database["public"]["Tables"]["parallels"]["Row"];
 
-// Only these 7 booleans drive badges
+// Only these booleans drive badges
 type BadgeKeys =
   | "is_hobby_exclusive"
   | "is_retail_exclusive"
-  | "is_fotl_exclusive"
+  | "is_fotl_hit"
   | "is_numbered"
   | "is_auto"
   | "is_sp"
@@ -34,7 +34,7 @@ type BadgeKeys =
 const BADGE_DEFS: { key: BadgeKeys; label: string }[] = [
   { key: "is_hobby_exclusive", label: "Hobby Exclusive" },
   { key: "is_retail_exclusive", label: "Retail Exclusive" },
-  { key: "is_fotl_exclusive", label: "FOTL Exclusive" },
+  { key: "is_fotl_hit", label: "FOTL Exclusive" },
   { key: "is_numbered", label: "Serial Numbered" },
   { key: "is_auto", label: "Auto" },
   { key: "is_sp", label: "SP" },
@@ -44,6 +44,26 @@ const BADGE_DEFS: { key: BadgeKeys; label: string }[] = [
 type AdminUploadTabProps = {
   products: SafeProduct[];
 };
+
+function makeBadgesFromParallel(p: Parallel): Record<BadgeKeys, boolean> {
+  return {
+    is_hobby_exclusive: !!p.is_hobby_exclusive,
+    is_retail_exclusive: !!p.is_retail_exclusive,
+    is_fotl_hit: !!(p as any).is_fotl_hit, // keeps TS happy even if types lag
+    is_numbered: !!p.is_numbered,
+    is_auto: !!p.is_auto,
+    is_sp: !!p.is_sp,
+    is_ssp: !!p.is_ssp,
+  };
+}
+
+function badgesEqual(
+  a: Record<BadgeKeys, boolean> | null,
+  b: Record<BadgeKeys, boolean> | null
+) {
+  if (!a || !b) return false;
+  return (Object.keys(a) as BadgeKeys[]).every((k) => a[k] === b[k]);
+}
 
 export default function AdminUploadTab({ products }: AdminUploadTabProps) {
   // filters
@@ -66,23 +86,44 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
   const [badges, setBadges] = useState<Record<BadgeKeys, boolean>>({
     is_hobby_exclusive: false,
     is_retail_exclusive: false,
-    is_fotl_exclusive: false,
+    is_fotl_hit: false,
     is_numbered: false,
     is_auto: false,
     is_sp: false,
     is_ssp: false,
   });
 
+  // 🔒 The badges that were loaded from DB when a parallel was selected.
+  // Used to prevent accidental overwrites.
+  const [initialBadges, setInitialBadges] = useState<Record<
+    BadgeKeys,
+    boolean
+  > | null>(null);
+
   // status
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Derived lists
+  const yearOptions = useMemo(() => {
+    return Array.from(
+      new Set(products.map((p) => p.year).filter((y): y is number => !!y))
+    ).sort((a, b) => b - a);
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
+    return selectedYear === ""
+      ? []
+      : products.filter((p) => p.year === Number(selectedYear));
+  }, [products, selectedYear]);
 
   // Load parallels whenever the selected product changes
   useEffect(() => {
     if (!selectedProductId) {
       setParallels([]);
       setSelectedParallelId(null);
+      setInitialBadges(null);
       return;
     }
 
@@ -106,6 +147,17 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
 
     loadParallels();
   }, [selectedProductId]);
+
+  // ✅ Hydrate badges from selected parallel so we don't overwrite seeded values
+  useEffect(() => {
+    if (!selectedParallelId) return;
+    const p = parallels.find((row) => row.id === selectedParallelId);
+    if (!p) return;
+
+    const hydrated = makeBadgesFromParallel(p);
+    setBadges(hydrated);
+    setInitialBadges(hydrated);
+  }, [selectedParallelId, parallels]);
 
   const handleBadgeToggle = (key: BadgeKeys, value: boolean) => {
     setBadges((prev) => ({ ...prev, [key]: value }));
@@ -162,14 +214,8 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
       const { error: insertErr } = await supabase
         .from("parallel_images")
         .insert([
-          {
-            parallel_id: selectedParallelId,
-            storage_path: frontPath,
-          },
-          {
-            parallel_id: selectedParallelId,
-            storage_path: backPath,
-          },
+          { parallel_id: selectedParallelId, storage_path: frontPath },
+          { parallel_id: selectedParallelId, storage_path: backPath },
         ]);
 
       if (insertErr) {
@@ -177,31 +223,34 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
         throw new Error("Failed to save image records.");
       }
 
-      // update badges on the parallel row
-      const { error: updateErr } = await supabase
-        .from("parallels")
-        .update({ ...badges })
-        .eq("id", selectedParallelId);
+      // ✅ Only update badges if you actually changed something.
+      const didChangeBadges = !badgesEqual(initialBadges, badges);
 
-      if (updateErr) {
-        console.error("Badge update error:", updateErr);
-        throw new Error("Images uploaded, but failed to update badges.");
+      if (didChangeBadges) {
+        const { error: updateErr } = await supabase
+          .from("parallels")
+          .update({ ...badges })
+          .eq("id", selectedParallelId);
+
+        if (updateErr) {
+          console.error("Badge update error:", updateErr);
+          throw new Error("Images uploaded, but failed to update badges.");
+        }
+
+        // Update our baseline so repeated saves don't keep rewriting.
+        setInitialBadges(badges);
       }
 
-      // reset parallel/files/badges (keep year + set)
-      setMessage("Upload successful and badges updated.");
-      setSelectedParallelId(null);
+      setMessage(
+        didChangeBadges
+          ? "Upload successful. Images saved and badges updated."
+          : "Upload successful. Images saved (badges unchanged)."
+      );
+
+      // ✅ Don't wipe out badges; keep them (and keep the parallel selected).
+      // This makes it easy to tweak or re-upload without re-setting toggles.
       setFrontFile(null);
       setBackFile(null);
-      setBadges({
-        is_hobby_exclusive: false,
-        is_retail_exclusive: false,
-        is_fotl_exclusive: false,
-        is_numbered: false,
-        is_auto: false,
-        is_sp: false,
-        is_ssp: false,
-      });
     } catch (err: any) {
       console.error(err);
       setError(err.message ?? "Something went wrong while uploading.");
@@ -209,16 +258,6 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
       setIsSubmitting(false);
     }
   };
-
-  // derived lists
-  const yearOptions = Array.from(
-    new Set(products.map((p) => p.year).filter((y): y is number => !!y))
-  ).sort((a, b) => b - a);
-
-  const filteredProducts =
-    selectedYear === ""
-      ? []
-      : products.filter((p) => p.year === Number(selectedYear));
 
   return (
     <div className="max-w-xl space-y-4">
@@ -235,6 +274,9 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
               setSelectedProductId(null);
               setParallels([]);
               setSelectedParallelId(null);
+              setInitialBadges(null);
+              setFrontFile(null);
+              setBackFile(null);
             }}
           >
             <SelectTrigger>
@@ -258,6 +300,9 @@ export default function AdminUploadTab({ products }: AdminUploadTabProps) {
             onValueChange={(value) => {
               setSelectedProductId(value);
               setSelectedParallelId(null);
+              setInitialBadges(null);
+              setFrontFile(null);
+              setBackFile(null);
             }}
             disabled={!selectedYear}
           >
