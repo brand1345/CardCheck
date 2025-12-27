@@ -184,7 +184,7 @@ export default async function SetPage(props: SetPageProps) {
       is_ssp,
       notes,
       sort_order,
-      parallel_images ( storage_path )
+      parallel_images ( storage_path )a
     `.trim()
     )
     .eq("product_id", product.id)
